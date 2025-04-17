@@ -1,0 +1,56 @@
+import os, time, schedule, json, random
+from instagrapi import Client
+import yt_dlp
+from datetime import datetime
+
+DOWNLOAD_DIR = "./download"
+LINKS_FILE = "tiktok_links.txt"
+ACCOUNTS_FILE = "accounts.json"
+SESSIONS_DIR = "./sessions"
+ORARI_POST = ["10:00","15:00","20:00"]
+
+def load_accounts():
+    return json.load(open(ACCOUNTS_FILE))
+
+def get_client(u,p):
+    os.makedirs(SESSIONS_DIR,exist_ok=True)
+    sess=f"{SESSIONS_DIR}/{u}.json"
+    cl=Client()
+    if os.path.exists(sess):
+        try: cl.load_settings(sess); cl.login(u,p); return cl
+        except: pass
+    cl.login(u,p); cl.dump_settings(sess); return cl
+
+def download_tiktok_video(url):
+    os.makedirs(DOWNLOAD_DIR,exist_ok=True)
+    opts={'outtmpl':f"{DOWNLOAD_DIR}/%(id)s.%(ext)s",'format':'mp4','quiet':True,'noplaylist':True}
+    with yt_dlp.YoutubeDL(opts) as y:
+        info=y.extract_info(url,download=True)
+        return y.prepare_filename(info), info
+
+def generate_caption(author):
+    love=["💞","❤️","💕","💖","💘","💗","💓","😍","🥰","😘"]
+    return f"Seguici per altri video{random.choice(love)}\\nRipostato da @{author}"
+
+def publish_video(path,u,p,cap):
+    cl = get_client(u,p)
+    cl.video_upload(path, cap)
+
+def post_to_all_accounts():
+    if not os.path.exists(LINKS_FILE): return
+    links=[l.strip() for l in open(LINKS_FILE) if l.strip()]
+    if not links: return
+    path,info=download_tiktok_video(links[0])
+    author=info.get("uploader","autore_sconosciuto")
+    cap=generate_caption(author)
+    for acc in load_accounts():
+        publish_video(path, acc["username"], acc["password"], cap)
+        time.sleep(5)
+    open(LINKS_FILE,"w").writelines(l+"\n" for l in links[1:])
+
+for h in ORARI_POST:
+    schedule.every().day.at(h).do(post_to_all_accounts)
+    print(f"Pianificato: {h}")
+while True:
+    schedule.run_pending()
+    time.sleep(30)
